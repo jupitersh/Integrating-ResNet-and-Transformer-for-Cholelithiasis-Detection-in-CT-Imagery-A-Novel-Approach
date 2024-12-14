@@ -124,3 +124,51 @@ class ResCNN(nn.Module):
         out = self.fc(self.output_for_tsne)
 
         return out
+
+class ResFCNet(nn.Module):
+    def __init__(self, dropout_prob_res=0, dropout_prob_fc=[0, 0]):
+        super(ResFCNet, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=3, kernel_size=(1, 1))
+
+        self.resnet18 = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+
+        self.resnet18.fc = nn.Sequential(
+            nn.Dropout(p=dropout_prob_res),
+            nn.Linear(self.resnet18.fc.in_features, 128)
+        )
+
+        self.fc1 = nn.Sequential(
+            nn.Linear(128 * 156, 512),
+            nn.ReLU(),
+            nn.Dropout(dropout_prob_fc[0]),
+            nn.Linear(512, 64),
+        )
+        self.fc2 = nn.Sequential(
+            nn.ReLU(),
+            nn.Dropout(dropout_prob_fc[1]),
+            nn.Linear(64, 2)
+        )
+
+    def forward(self, x):
+        batch_size = x.size(0)
+        slices = x.size(1)
+
+        resnet_output = torch.zeros(batch_size, slices, 128).to(x.device)
+
+        for i in range(slices):
+            layer = x[:, i, :, :, :]
+            if torch.all(layer == 0):
+                resnet_output[:, i, :] = torch.zeros(128).to(x.device)
+            else:
+                layer = self.conv1(layer)
+                layer_feature = self.resnet18(layer)
+                resnet_output[:, i, :] = layer_feature
+
+        resnet_output = resnet_output.view(batch_size, -1)
+
+        self.output_for_tsne = self.fc1(resnet_output)
+
+        out = self.fc2(self.output_for_tsne)
+
+        return out
